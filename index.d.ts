@@ -1,6 +1,5 @@
-// Origin: NOCOM-BOT/mod_fbmsg_legacy
 
-declare module '@dongdev/fca-unofficial' {
+declare module 'fca-nazrul-api' {
     import type { Readable, Duplex, Transform } from "stream";
     import type EventEmitter from "events";
 
