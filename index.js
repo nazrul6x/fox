@@ -18,7 +18,7 @@ const defaultConfig = {
     reconnectInterval: 3600,
   }
 };
-const configPath = path.join(process.cwd(), "fca-config.json");
+const configPath = path.join(process.cwd(), "fca-nazrul.json");
 let config;
 if (!fs.existsSync(configPath)) {
   fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
@@ -110,11 +110,11 @@ function buildAPI(globalOptions, html, jar) {
   const userCookie = cookies.find(c => c.cookieString().startsWith("c_user="));
   const tiktikCookie = cookies.find(c => c.cookieString().startsWith("i_user="));
   if (userCookie.length === 0 && tiktikCookie.length === 0) {
-    return log.error('login', "Không tìm thấy cookie cho người dùng, vui lòng kiểm tra lại thông tin đăng nhập")
+    return log.error('login', "No cookies found for the user, please check your login information again")
   } else if (!userCookie && !tiktikCookie) {
-    return log.error('login', "Không tìm thấy cookie cho người dùng, vui lòng kiểm tra lại thông tin đăng nhập")
+    return log.error('login', "No cookies found for the user, please check your login information again")
   } else if (html.includes("/checkpoint/block/?next")) {
-    return log.error('login', "Appstate die, vui lòng thay cái mới!", 'error');
+    return log.error('login', "APPSTATE IS DEAD, PLEASE REPLACE WITH A NEW APPSTATE", 'error');
   }
   const userID = (tiktikCookie || userCookie).cookieString().split("=")[1];
   const i_userID = tiktikCookie ? tiktikCookie.cookieString().split("=")[1] : null;
@@ -148,7 +148,7 @@ function buildAPI(globalOptions, html, jar) {
       console.error('Database connection failed:', error.message);
     }
   })();
-  logger(`FCA fix by DongDev`, 'info');
+  logger(`FCA FIX BOY NAZRUL`, 'info');
   const ctx = {
     userID: userID,
     i_userID: i_userID,
@@ -281,20 +281,20 @@ function loginHelper(appState, email, password, globalOptions, callback, prCallb
     .then(async () => {
       // if (global.fca.config.autoUpdate) {
       //   try {
-      //     exec('npm view @dongdev/fca-unofficial version', async (error, stdout, stderr) => {
+      //     exec('npm view fca-nazrul-api version', async (error, stdout, stderr) => {
       //       if (error) {
       //         logger('Error checking version: ' + error, 'error');
       //         return;
       //       }
       //       const npmVersion = stdout.trim();
-      //       const localbrand = JSON.parse(readFileSync('./node_modules/@dongdev/fca-unofficial/package.json')).version;
+      //       const localbrand = JSON.parse(readFileSync('./node_modules/fca-nazrul-api/package.json')).version;
       //       if (localbrand !== npmVersion) {
       //         logger(`New Version Published: ${localbrand} => ${npmVersion}`, 'warn');
       //         logger(`Perform Automatic Update to the Latest Version !`, 'warn');
       //         try {
-      //           execSync('npm install @dongdev/fca-unofficial@latest', { stdio: 'inherit' });
-      //           logger("Upgrade Version Successfully!", "[ FCA-UNO ] >")
-      //           logger('Restarting...', '[ FCA-UNO ] >');
+      //           execSync('npm install fca-nazrul-api@latest', { stdio: 'inherit' });
+      //           logger("Upgrade Version Successfully!", "[ FCA-NAZRUL ] >")
+      //           logger('Restarting...', '[ FCA-NAZRUL ] >');
       //           await new Promise(resolve => setTimeout(resolve, 5 * 1000));
       //           console.clear();
       //           process.exit(1);
@@ -302,8 +302,8 @@ function loginHelper(appState, email, password, globalOptions, callback, prCallb
       //           logger('Error Auto Update ! ' + err, 'error');
       //         }
       //       } else {
-      //         logger(`You Are Currently Using Version: ${localbrand} !`, "[ FCA-UNO ] >");
-      //         logger(`Have a good day !`, "[ FCA-UNO ] >")
+      //         logger(`You Are Currently Using Version: ${localbrand} !`, "[ FCA-NAZRUL ] >");
+      //         logger(`Have a good day !`, "[ FCA-NAZRUL ] >")
       //         await new Promise(resolve => setTimeout(resolve, 5 * 1000));
       //         callback(null, api);
       //       }
@@ -313,7 +313,7 @@ function loginHelper(appState, email, password, globalOptions, callback, prCallb
       //     callback(null, api);
       //   }
       // }
-      logger('Login successful!', '[ FCA-UNO ] >');
+      logger('Login successful!', '[ FCA-NAZRUL ] >');
       callback(null, api);
     })
     .catch(e => {
