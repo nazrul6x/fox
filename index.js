@@ -1,51 +1,41 @@
 "use strict";
-
 const utils = require("./utils");
 const log = require("npmlog");
-const { execSync, exec } = require("child_process");
-const { promises: fsPromises, readFileSync } = require("fs");
-const fs = require("fs");
-const axios = require("axios");
-const path = require("path");
+const { execSync, exec } = require('child_process');
+const { promises: fsPromises, readFileSync } = require('fs');
+const fs = require('fs');
+const axios = require('axios');
+const path = require('path');
 const models = require("./lib/database/models");
 const logger = require("./lib/logger");
-
-// ==========================
-// Default Config Section
-// ==========================
+let checkVerified = null;
 const defaultLogRecordSize = 100;
 log.maxRecordSize = defaultLogRecordSize;
-
 const defaultConfig = {
   autoUpdate: true,
   mqtt: {
     enabled: true,
     reconnectInterval: 3600,
-  },
+  }
 };
-
 const configPath = path.join(process.cwd(), "fca-nazrul.json");
 let config;
-
 if (!fs.existsSync(configPath)) {
   fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
   config = defaultConfig;
 } else {
   try {
-    const fileContent = fs.readFileSync(configPath, "utf8");
-    const parsedConfig = JSON.parse(fileContent);
-    config = { ...defaultConfig, ...parsedConfig };
+    const fileContent = fs.readFileSync(configPath, 'utf8');
+    config = JSON.parse(fileContent);
+    config = { ...defaultConfig, ...config };
   } catch (err) {
-    log.error("Config", "Error reading config file, using defaults");
+    logger("Error reading config file, using defaults", "error");
     config = defaultConfig;
   }
 }
-
-global.fca = { config };
-
-// ==========================
-// Option Settings
-// ==========================
+global.fca = {
+  config: config
+};
 const Boolean_Option = [
   "online",
   "selfListen",
@@ -58,105 +48,113 @@ const Boolean_Option = [
   "autoReconnect",
   "emitReady",
 ];
-
 function setOptions(globalOptions, options) {
-  Object.keys(options).forEach(function (key) {
-    if (Boolean_Option.includes(key)) {
-      globalOptions[key] = Boolean(options[key]);
-    } else {
-      switch (key) {
-        case "pauseLog":
-          options.pauseLog ? log.pause() : log.resume();
-          break;
-        case "logLevel":
-          log.level = options.logLevel;
-          globalOptions.logLevel = options.logLevel;
-          break;
-        case "logRecordSize":
-          log.maxRecordSize = options.logRecordSize;
-          globalOptions.logRecordSize = options.logRecordSize;
-          break;
-        case "pageID":
-          globalOptions.pageID = options.pageID.toString();
-          break;
-        case "userAgent":
-          globalOptions.userAgent =
-            options.userAgent ||
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
-          break;
-        case "proxy":
-          if (typeof options.proxy !== "string") {
-            delete globalOptions.proxy;
-            utils.setProxy();
-          } else {
-            globalOptions.proxy = options.proxy;
-            utils.setProxy(globalOptions.proxy);
+  Object.keys(options).map(function (key) {
+    switch (Boolean_Option.includes(key)) {
+      case true: {
+        globalOptions[key] = Boolean(options[key]);
+        break;
+      }
+      case false: {
+        switch (key) {
+          case "pauseLog": {
+            if (options.pauseLog) log.pause();
+            else log.resume();
+            break;
           }
-          break;
-        default:
-          log.warn("setOptions", `Unrecognized option: ${key}`);
-          break;
+          case "logLevel": {
+            log.level = options.logLevel;
+            globalOptions.logLevel = options.logLevel;
+            break;
+          }
+          case "logRecordSize": {
+            log.maxRecordSize = options.logRecordSize;
+            globalOptions.logRecordSize = options.logRecordSize;
+            break;
+          }
+          case "pageID": {
+            globalOptions.pageID = options.pageID.toString();
+            break;
+          }
+          case "userAgent": {
+            globalOptions.userAgent =
+              options.userAgent ||
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+            break;
+          }
+          case "proxy": {
+            if (typeof options.proxy != "string") {
+              delete globalOptions.proxy;
+              utils.setProxy();
+            } else {
+              globalOptions.proxy = options.proxy;
+              utils.setProxy(globalOptions.proxy);
+            }
+            break;
+          }
+          default: {
+            log.warn(
+              "setOptions",
+              "Unrecognized option given to setOptions: " + key
+            );
+            break;
+          }
+        }
+        break;
       }
     }
   });
 }
-
-// ==========================
-// Build API Section
-// ==========================
 function buildAPI(globalOptions, html, jar) {
   const cookies = jar.getCookies("https://www.facebook.com");
-  const userCookie = cookies.find((c) => c.cookieString().startsWith("c_user="));
-  const tiktikCookie = cookies.find((c) => c.cookieString().startsWith("i_user="));
-
-  if (!userCookie && !tiktikCookie) {
-    return log.error("login", "No cookies found for the user, please check your login information again");
+  const userCookie = cookies.find(c => c.cookieString().startsWith("c_user="));
+  const tiktikCookie = cookies.find(c => c.cookieString().startsWith("i_user="));
+  if (userCookie.length === 0 && tiktikCookie.length === 0) {
+    return log.error('login', "No cookies found for the user, please check your login information again")
+  } else if (!userCookie && !tiktikCookie) {
+    return log.error('login', "No cookies found for the user, please check your login information again")
+  } else if (html.includes("/checkpoint/block/?next")) {
+    return log.error('login', "APPSTATE IS DEAD, PLEASE REPLACE WITH A NEW APPSTATE", 'error');
   }
-
-  if (html.includes("/checkpoint/block/?next")) {
-    return log.error("login", "APPSTATE IS DEAD, PLEASE REPLACE WITH A NEW APPSTATE");
-  }
-
   const userID = (tiktikCookie || userCookie).cookieString().split("=")[1];
   const i_userID = tiktikCookie ? tiktikCookie.cookieString().split("=")[1] : null;
-
-  logger.info(`Logged in as ${userID}`);
-
+  logger(`Logged in as ${userID}`, 'info');
+  try {
+    clearInterval(checkVerified);
+  } catch (_) { }
   const clientID = ((Math.random() * 2147483648) | 0).toString(16);
   let mqttEndpoint, region, fb_dtsg, irisSeqID;
-
   try {
     const endpointMatch = html.match(/"endpoint":"([^"]+)"/);
     if (endpointMatch) {
       mqttEndpoint = endpointMatch[1].replace(/\\\//g, "/");
       const url = new URL(mqttEndpoint);
       region = url.searchParams.get("region")?.toUpperCase() || "PRN";
-      logger.info(`Server region: ${region}`);
     }
-  } catch {
-    log.warn("login", "No MQTT endpoint found");
+    logger(`Sever region ${region}`, 'info');
+  } catch (e) {
+    log.warning("login", "Not MQTT endpoint");
   }
-
   const tokenMatch = html.match(/DTSGInitialData.*?token":"(.*?)"/);
-  if (tokenMatch) fb_dtsg = tokenMatch[1];
-
-  // Database Sync
+  if (tokenMatch) {
+    fb_dtsg = tokenMatch[1];
+  }
   (async () => {
     try {
       await models.sequelize.authenticate();
       await models.syncAll();
-      logger.info("Database connected successfully");
     } catch (error) {
-      log.error("Database", `Connection failed: ${error.message}`);
+      console.error(error);
+      console.error('Database connection failed:', error.message);
     }
   })();
-
+  logger(`FCA FIX BOY NAZRUL`, 'info');
   const ctx = {
-    userID,
-    i_userID,
-    jar,
-    clientID,
-    globalOptions,
+    userID: userID,
+    i_userID: i_userID,
+    jar: jar,
+    clientID: clientID,
+    globalOptions: globalOptions,
     loggedIn: true,
     access_token: "NONE",
     clientMutationId: 0,
@@ -168,79 +166,76 @@ function buildAPI(globalOptions, html, jar) {
     firstListen: true,
     fb_dtsg,
     wsReqNumber: 0,
-    wsTaskNumber: 0,
+    wsTaskNumber: 0
   };
-
   const api = {
     setOptions: setOptions.bind(null, globalOptions),
-    getAppState: function () {
+    getAppState: function getAppState() {
       const appState = utils.getAppState(jar);
       return appState.filter(
         (item, index, self) =>
-          self.findIndex((t) => t.key === item.key) === index
+          self.findIndex((t) => {
+            return t.key === item.key;
+          }) === index
       );
     },
   };
-
   const defaultFuncs = utils.makeDefaults(html, i_userID || userID, ctx);
-
-  fs.readdirSync(path.join(__dirname, "src"))
+  require("fs")
+    .readdirSync(__dirname + "/src/")
     .filter((v) => v.endsWith(".js"))
-    .forEach((v) => {
-      api[v.replace(".js", "")] = require(`./src/${v}`)(defaultFuncs, api, ctx);
+    .map(function (v) {
+      api[v.replace(".js", "")] = require("./src/" + v)(defaultFuncs, api, ctx);
     });
-
   api.listen = api.listenMqtt;
-
-  // Auto refresh fb_dtsg every 24h
   setInterval(async () => {
-    if (api.refreshFb_dtsg) {
-      try {
-        await api.refreshFb_dtsg();
-        logger.info("Successfully refreshed fb_dtsg");
-      } catch (err) {
-        log.error("fb_dtsg", `Error refreshing: ${err.message}`);
-      }
-    }
+    api
+      .refreshFb_dtsg()
+      .then(() => {
+        logger("Successfully refreshed fb_dtsg", 'info');
+      })
+      .catch((err) => {
+        console.error("An error occurred while refreshing fb_dtsg", err);
+      });
   }, 1000 * 60 * 60 * 24);
-
-  return { ctx, defaultFuncs, api };
+  return {
+    ctx,
+    defaultFuncs,
+    api
+  };
 }
 
-// ==========================
-// Login Helper Section
-// ==========================
-function loginHelper(appState, email, password, globalOptions, callback) {
+function loginHelper(appState, email, password, globalOptions, callback, prCallback) {
+  let mainPromise = null;
   const jar = utils.getJar();
-  let mainPromise;
-
-  // Load AppState cookies
   if (appState) {
-    if (typeof appState === "string") {
+    try {
+      appState = JSON.parse(appState);
+    } catch (e) {
       try {
-        appState = JSON.parse(appState);
-      } catch {
-        return callback(new Error("Failed to parse appState JSON"));
+        appState = appState;
+      } catch (e) {
+        return callback(new Error("Failed to parse appState"));
       }
     }
 
     try {
-      appState.forEach((c) => {
+      appState.forEach(c => {
         const str = `${c.key}=${c.value}; expires=${c.expires}; domain=${c.domain}; path=${c.path};`;
-        jar.setCookie(str, "https://" + c.domain);
+        jar.setCookie(str, "http://" + c.domain);
       });
 
-      mainPromise = utils
-        .get("https://www.facebook.com/", jar, null, globalOptions, { noRef: true })
+      mainPromise = utils.get('https://www.facebook.com/', jar, null, globalOptions, { noRef: true })
         .then(utils.saveCookies(jar));
     } catch (e) {
-      return callback(e);
+      process.exit(0);
     }
   } else {
     mainPromise = utils
       .get("https://www.facebook.com/", null, null, globalOptions, { noRef: true })
       .then(utils.saveCookies(jar))
-      .then(() => utils.get("https://www.facebook.com/", jar, null, globalOptions).then(utils.saveCookies(jar)));
+      .then(makeLogin(jar, email, password, globalOptions, callback, prCallback))
+      .then(() => utils.get('https://www.facebook.com/', jar, null, globalOptions).then(utils.saveCookies(jar)));
   }
 
   function handleRedirect(res) {
@@ -253,34 +248,87 @@ function loginHelper(appState, email, password, globalOptions, callback) {
   }
 
   let ctx, api;
-
   mainPromise = mainPromise
     .then(handleRedirect)
-    .then((res) => {
+    .then(res => {
+      const mobileAgentRegex = /MPageLoadClientMetrics/gs;
+      if (!mobileAgentRegex.test(res.body)) {
+        globalOptions.userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
+        return utils.get('https://www.facebook.com/', jar, null, globalOptions, { noRef: true }).then(utils.saveCookies(jar));
+      }
+      return res;
+    })
+    .then(handleRedirect)
+    .then(res => {
       const html = res.body;
       const Obj = buildAPI(globalOptions, html, jar);
       ctx = Obj.ctx;
       api = Obj.api;
       return res;
-    })
+    });
+
+  if (globalOptions.pageID) {
+    mainPromise = mainPromise
+      .then(() => utils.get(`https://www.facebook.com/${globalOptions.pageID}/messages/?section=messages&subsection=inbox`, jar, null, globalOptions))
+      .then(resData => {
+        let url = utils.getFrom(resData.body, 'window.location.replace("https:\\/\\/www.facebook.com\\', '");').split('\\').join('');
+        url = url.substring(0, url.length - 1);
+        return utils.get('https://www.facebook.com' + url, jar, null, globalOptions);
+      });
+  }
+
+  mainPromise
     .then(async () => {
-      log.info("FCA-NAZRUL", "Login successful!");
+      // if (global.fca.config.autoUpdate) {
+      //   try {
+      //     exec('npm view fca-nazrul-api version', async (error, stdout, stderr) => {
+      //       if (error) {
+      //         logger('Error checking version: ' + error, 'error');
+      //         return;
+      //       }
+      //       const npmVersion = stdout.trim();
+      //       const localbrand = JSON.parse(readFileSync('./node_modules/fca-nazrul-api/package.json')).version;
+      //       if (localbrand !== npmVersion) {
+      //         logger(`New Version Published: ${localbrand} => ${npmVersion}`, 'warn');
+      //         logger(`Perform Automatic Update to the Latest Version !`, 'warn');
+      //         try {
+      //           execSync('npm install fca-nazrul-api@latest', { stdio: 'inherit' });
+      //           logger("Upgrade Version Successfully!", "[ FCA-NAZRUL ] >")
+      //           logger('Restarting...', '[ FCA-NAZRUL ] >');
+      //           await new Promise(resolve => setTimeout(resolve, 5 * 1000));
+      //           console.clear();
+      //           process.exit(1);
+      //         } catch (err) {
+      //           logger('Error Auto Update ! ' + err, 'error');
+      //         }
+      //       } else {
+      //         logger(`You Are Currently Using Version: ${localbrand} !`, "[ FCA-NAZRUL ] >");
+      //         logger(`Have a good day !`, "[ FCA-NAZRUL ] >")
+      //         await new Promise(resolve => setTimeout(resolve, 5 * 1000));
+      //         callback(null, api);
+      //       }
+      //     });
+      //   } catch (err) {
+      //     logger('Error checking for updates: ' + err, 'error');
+      //     callback(null, api);
+      //   }
+      // }
+      logger('Login successful!', '[ FCA-NAZRUL ] >');
       callback(null, api);
     })
-    .catch((e) => {
+    .catch(e => {
       callback(e);
     });
 }
 
-// ==========================
-// Main Exported Login Function
-// ==========================
 function login(loginData, options, callback) {
-  if (typeof options === "function") {
+  if (
+    utils.getType(options) === "Function" ||
+    utils.getType(options) === "AsyncFunction"
+  ) {
     callback = options;
     options = {};
   }
-
   const globalOptions = {
     selfListen: false,
     selfListenEvent: false,
@@ -297,28 +345,35 @@ function login(loginData, options, callback) {
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
   };
-
   setOptions(globalOptions, options);
-
   let prCallback = null;
-  if (typeof callback !== "function") {
-    let rejectFunc, resolveFunc;
-    const returnPromise = new Promise(function (resolve, reject) {
+  if (
+    utils.getType(callback) !== "Function" &&
+    utils.getType(callback) !== "AsyncFunction"
+  ) {
+    let rejectFunc = null;
+    let resolveFunc = null;
+    var returnPromise = new Promise(function (resolve, reject) {
       resolveFunc = resolve;
       rejectFunc = reject;
     });
-
     prCallback = function (error, api) {
-      if (error) rejectFunc(error);
-      else resolveFunc(api);
+      if (error) {
+        return rejectFunc(error);
+      }
+      return resolveFunc(api);
     };
-
     callback = prCallback;
-    loginHelper(loginData.appState, loginData.email, loginData.password, globalOptions, callback);
-    return returnPromise;
   }
-
-  loginHelper(loginData.appState, loginData.email, loginData.password, globalOptions, callback);
+  loginHelper(
+    loginData.appState,
+    loginData.email,
+    loginData.password,
+    globalOptions,
+    callback,
+    prCallback
+  );
+  return returnPromise;
 }
 
 module.exports = login;
